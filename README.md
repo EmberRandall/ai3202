@@ -1,8 +1,10 @@
 # ai3202
 New repo for AI homework
 
-In assignment 2, I used the Euclidean distance as my second heuristic, with the equation
-h = sqrt((x-endX)**2 + (y-endY)**2)
+In assignment 2, I used the Euclidean distance as my second heuristic, with the equation:
+
+h = sqrt((x-endX)^2 + (y-endY)^2)
+
 where endX and endY represent the coordinates of the goal square and x and y represent the coordinates of the current node.
 
 Since the horse can move diagonally, I thought that this heuristic would provide good results, as it measures the diagonal distance.
