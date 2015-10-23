@@ -8,8 +8,10 @@ class ParentNode:
         self.pTrue = pTrue
         self.name = name
         self.cancerNode = None
+        self.sortOrder = 1
     
     def probability(self, isTrue):
+        # P(self = isTrue)
         prob = self.pTrue if isTrue else 1.0 - self.pTrue
         return prob
     
@@ -61,8 +63,10 @@ class ChildNode:
         self.pTrueCFalse = pTrueCFalse
         self.cancerNode = cancerNode
         self.name = name
+        self.sortOrder = 2
     
     def probability(self, isTrue):
+        # P(self = isTrue)
         pTrue = self.pTrueCTrue * self.cancerNode.probability(True) + self.pTrueCFalse * self.cancerNode.probability(False)
         prob = pTrue if isTrue else 1.0 - pTrue
         return prob
@@ -104,8 +108,10 @@ class CancerNode:
         self.smokerNode = smokerNode
         self.probabilityTable = [(False, True, 0.05), (False, False, 0.02), (True, True, 0.03), (True, False, 0.001)]
         self.name = "Cancer"
+        self.sortOrder = 0
     
     def probability(self, isTrue):
+        # P(self = isTrue)
         pTrue = 0.0
         for p, s, val in self.probabilityTable:
             pTrue += val * self.pollutionNode.probability(p) * self.smokerNode.probability(s)
@@ -150,14 +156,46 @@ class CancerNode:
             prob = node1.conditional(isTrue1, self, selfTrue) * node2.doubleConditional(isTrue2, self, node1, selfTrue, isTrue1)
             prob *= self.probability(selfTrue) / (node1.probability(isTrue1) * node2.conditional(isTrue2, node1, isTrue1))
         return prob
-    
-def makeTable(node1, node2, node3, isTrue1, isTrue2, isTrue3):
-    for i in [True, False]:
-        for j in [True, False]:
-            for k in [True, False]:
-                if ((i == isTrue1 or isTrue1 == None) and (j == isTrue2 or isTrue2 == None) and (k == isTrue3 or isTrue3 == None)):
-                    p = node1.probability(i) * node2.conditional(j, node1, i) * node3.doubleConditional(k, node1, node2, i, j)
-                    print "P(", node1.name,"=",i,",",node2.name,"=",j,",",node3.name,"=",k,") =",p
+
+def getConditional(nodes, b):
+    # P(nodes.last = b.last | nodes[:last] = b[:last])
+    if len(nodes) == 1:
+        return nodes[0].probability(b[0])
+    elif len(nodes) == 2:
+        return nodes[1].conditional(b[1], nodes[0], b[0])
+    elif len(nodes) == 3:
+        return nodes[2].doubleConditional(b[2], nodes[0], nodes[1], b[0], b[1])
+    elif len(nodes) == 4:
+        if isinstance(nodes[0], CancerNode):
+            return nodes[3].conditional(b[3], nodes[0], b[0])
+        else:
+            p = nodes[2].conditional(b[2], nodes[3], b[3])
+            p *= nodes[1].doubleConditional(b[1], nodes[2], nodes[3], b[2], b[3])
+            p *= nodes[0].doubleConditional(b[0], nodes[2], nodes[3], b[2], b[3])
+            p *= nodes[3].probability(b[3]) / combinedProbability(nodes[:3], b[:3])
+            return p
+    elif len(nodes) == 5:
+        return nodes[4].conditional(b[4], nodes[0], b[0])
+    return 0.0
+
+def combinedProbability(nodes, b, printString = False):
+    p = 1.0
+    sol = "P( "
+    for j in range(0, len(nodes)):
+        p *= getConditional(nodes[:j+1], b[:j+1])
+        sol += nodes[j].name + "=" + str(b[j]) + " "
+    if (printString):
+        print sol + ") = " + str(p)
+    return p
+
+def makeTable(nodes, truths):
+    nodes, truths = zip(*sorted(zip(nodes, truths), key=lambda (n, b): n.sortOrder))
+    for i in range(0, 2 ** len(nodes)):
+        b = [bool(int(x)) for x in bin(i)[2:]]
+        for a in range(0, len(nodes) - len(b)):
+            b.insert(0, False)
+        if (all((x == y or y == None) for x, y in zip(b, truths))):
+            combinedProbability(nodes, b, True)
 
 if __name__ == "__main__":
     argparser = argparse.ArgumentParser()
@@ -184,35 +222,31 @@ if __name__ == "__main__":
     
     nodes = {'S' : smokerNode, 'P' : pollutionNode, 'C' : cancerNode, 'X': xrayNode, 'D' : dNode}
     if (args.g != None):
-        a = args.g.split(":")[0]
-        b = args.g.split(":")[1]
-        aNode = None
-        isTrue = True
-        if (len(a) == 1):
-            aNode = nodes.get(a.capitalize())
-        else:
-            aNode = nodes.get(a[1].capitalize())
-            isTrue = False
-        if len(b) == 1:
-            bNode = nodes.get(b.capitalize())
-            print "Bel(", aNode.name, "=", isTrue, "|", bNode.name, "= True ) =", aNode.conditional(isTrue, bNode, True)
-        else:
-            bNode1 = nodes.get(b[0].capitalize())
-            bNode2 = nodes.get(b[1].capitalize())
+        match = re.match(r'(~?)(\w{1}):(\w{1})(\w?)', args.g)
+        aNode = nodes.get(match.group(2).capitalize())
+        isTrue = True if match.group(1) == "" else False
+        if match.group(4) != "":
+            bNode1 = nodes.get(match.group(3).capitalize())
+            bNode2 = nodes.get(match.group(4).capitalize())
             p = aNode.doubleConditional(isTrue, bNode1, bNode2, True, True)
             print "Bel(", aNode.name, "=", isTrue, "|", bNode1.name, "= True,", bNode2.name, "= True ) =", p
+        else:
+            bNode = nodes.get(match.group(3).capitalize())
+            print "Bel(", aNode.name, "=", isTrue, "|", bNode.name, "= True ) =", aNode.conditional(isTrue, bNode, True)
     elif (args.j != None):
-        match = re.match(r'(~?)(\w{1})(~?)(\w{1})(~?)(\w{1})', args.j)
+        match = re.match(r'(~?)(\w{1})(~?)(\w?)(~?)(\w?)(~?)(\w?)(~?)(\w?)', args.j)
         if match:
             b = []
-            for i in [1, 3, 5]:
-                if (match.group(i+1).islower()):
-                    bi = True if match.group(i) == "" else False
-                else:
-                    bi = None
-                b.append(bi)
-                b.append(nodes.get(match.group(i+1).capitalize()))
-            makeTable(b[1], b[3], b[5], b[0], b[2], b[4])
+            n = []
+            for i in range(1, 10, 2):
+                if (match.group(i+1) != ""):
+                    if (match.group(i+1).islower()):
+                        bi = True if match.group(i) == "" else False
+                    else:
+                        bi = None
+                    b.append(bi)
+                    n.append(nodes.get(match.group(i+1).capitalize()))
+            makeTable(n, b)
         else:
             print "No match"
         
